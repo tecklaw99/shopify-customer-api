@@ -6,12 +6,12 @@
   "scripts": {
     "start": "node index.js"
   },
+  "type": "module",
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "express": "^5.1.0",
     "node-fetch": "^3.3.2"
-  },
-  "devDependencies": {}
+  }
 }

@@ -1,15 +1,15 @@
+import express from 'express';
+import fetch from 'node-fetch';
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   next();
 });
-
-import express from 'express';
-import fetch from 'node-fetch';
-
-const app = express();
-const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 

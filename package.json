@@ -1,0 +1,17 @@
+{
+  "name": "shopify-customer-api",
+  "version": "1.0.0",
+  "description": "Backend API for Shopify POS customer search and creation",
+  "main": "index.js",
+  "scripts": {
+    "test": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^5.1.0",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {}
+}

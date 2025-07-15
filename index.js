@@ -2,7 +2,7 @@ import express from 'express';
 import fetch from 'node-fetch';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT; // Do NOT default to 3000 or 8080 for Railway
 
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -23,7 +23,6 @@ app.get('/find-by-phone', async (req, res) => {
     return res.status(400).json({ error: 'Invalid last8' });
   }
   try {
-    // Use Shopify's customer search endpoint (very fast!)
     const url = `https://${SHOPIFY_STORE}/admin/api/2024-07/customers/search.json?query=phone:*${last8}`;
     const response = await fetch(url, {
       headers: {
@@ -33,7 +32,7 @@ app.get('/find-by-phone', async (req, res) => {
     });
     const data = await response.json();
     if (data.customers && data.customers.length > 0) {
-      const match = data.customers[0]; // Use the first match
+      const match = data.customers[0];
       res.json({
         id: match.id,
         displayName: (match.first_name || '') + ' ' + (match.last_name || ''),

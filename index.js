@@ -16,40 +16,24 @@ app.use(express.json());
 const SHOPIFY_STORE = process.env.SHOPIFY_STORE;
 const ACCESS_TOKEN = process.env.SHOPIFY_ADMIN_API_TOKEN;
 
-async function fetchAllCustomers() {
-  let all = [];
-  let url = `https://${SHOPIFY_STORE}/admin/api/2024-07/customers.json?limit=250`;
-  while (url) {
-    const res = await fetch(url, {
-      headers: {
-        'X-Shopify-Access-Token': ACCESS_TOKEN,
-        'Content-Type': 'application/json',
-      },
-    });
-    const data = await res.json();
-    all = all.concat(data.customers || []);
-    const link = res.headers.get('link');
-    url = null;
-    if (link && link.includes('rel="next"')) {
-      url = link.match(/<([^>]+)>; rel="next"/)[1];
-    }
-  }
-  return all;
-}
-
+// --- FAST: Use Shopify's Search API for /find-by-phone ---
 app.get('/find-by-phone', async (req, res) => {
   const last8 = req.query.last8;
   if (!last8 || !/^\d{8}$/.test(last8)) {
     return res.status(400).json({ error: 'Invalid last8' });
   }
   try {
-    const customers = await fetchAllCustomers();
-    const match = customers.find(c => {
-      if (!c.phone) return false;
-      const digits = c.phone.replace(/\D/g, '');
-      return digits.slice(-8) === last8;
+    // Use Shopify's customer search endpoint (very fast!)
+    const url = `https://${SHOPIFY_STORE}/admin/api/2024-07/customers/search.json?query=phone:*${last8}`;
+    const response = await fetch(url, {
+      headers: {
+        'X-Shopify-Access-Token': ACCESS_TOKEN,
+        'Content-Type': 'application/json',
+      },
     });
-    if (match) {
+    const data = await response.json();
+    if (data.customers && data.customers.length > 0) {
+      const match = data.customers[0]; // Use the first match
       res.json({
         id: match.id,
         displayName: (match.first_name || '') + ' ' + (match.last_name || ''),

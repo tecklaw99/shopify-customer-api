@@ -2,7 +2,7 @@ import express from 'express';
 import fetch from 'node-fetch';
 
 const app = express();
-const PORT = process.env.PORT; // Do NOT default to 3000 or 8080 for Railway
+const PORT = process.env.PORT; // Railway sets this
 
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -16,7 +16,7 @@ app.use(express.json());
 const SHOPIFY_STORE = process.env.SHOPIFY_STORE;
 const ACCESS_TOKEN = process.env.SHOPIFY_ADMIN_API_TOKEN;
 
-// --- FAST: Use Shopify's Search API for /find-by-phone ---
+// --- Find by phone ---
 app.get('/find-by-phone', async (req, res) => {
   const last8 = req.query.last8;
   if (!last8 || !/^\d{8}$/.test(last8)) {
@@ -24,6 +24,37 @@ app.get('/find-by-phone', async (req, res) => {
   }
   try {
     const url = `https://${SHOPIFY_STORE}/admin/api/2024-07/customers/search.json?query=phone:*${last8}`;
+    const response = await fetch(url, {
+      headers: {
+        'X-Shopify-Access-Token': ACCESS_TOKEN,
+        'Content-Type': 'application/json',
+      },
+    });
+    const data = await response.json();
+    if (data.customers && data.customers.length > 0) {
+      const match = data.customers[0];
+      res.json({
+        id: match.id,
+        displayName: (match.first_name || '') + ' ' + (match.last_name || ''),
+        email: match.email,
+        phone: match.phone,
+      });
+    } else {
+      res.status(404).json({ error: 'Not found' });
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Internal error' });
+  }
+});
+
+// --- Find by email ---
+app.get('/find-by-email', async (req, res) => {
+  const email = req.query.email;
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Invalid email' });
+  }
+  try {
+    const url = `https://${SHOPIFY_STORE}/admin/api/2024-07/customers/search.json?query=email:${encodeURIComponent(email)}`;
     const response = await fetch(url, {
       headers: {
         'X-Shopify-Access-Token': ACCESS_TOKEN,

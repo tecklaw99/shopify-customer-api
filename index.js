@@ -59,9 +59,10 @@ app.get('/find-by-phone', async (req, res) => {
 
 app.post('/create-customer', async (req, res) => {
   const { firstName, lastName, email, phone } = req.body;
-  if (!firstName || !lastName || !email || !phone) {
+  if (!firstName || !email || !phone) {
     return res.status(400).json({ error: 'Missing required fields.' });
   }
+  const safeLastName = typeof lastName === 'string' ? lastName : '';
   try {
     const response = await fetch(`https://${SHOPIFY_STORE}/admin/api/2024-07/customers.json`, {
       method: 'POST',
@@ -72,7 +73,7 @@ app.post('/create-customer', async (req, res) => {
       body: JSON.stringify({
         customer: {
           first_name: firstName,
-          last_name: lastName,
+          last_name: safeLastName,
           email,
           phone,
         }

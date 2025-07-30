@@ -7,7 +7,7 @@ import crypto from 'crypto';
 import { URLSearchParams } from 'node:url';
 
 const app = express();
-const PORT = process.env.PORT || 8000;
+const PORT = process.env.PORT || 3000;
 
 // ① Your live HitPay API
 const HITPAY_BASE_URL = 'https://api.hit-pay.com/v1';

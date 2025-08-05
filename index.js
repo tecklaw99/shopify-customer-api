@@ -1,94 +1,225 @@
+// index.js
 import express from 'express';
+import bodyParser from 'body-parser';
 import fetch from 'node-fetch';
+import cors from 'cors';
+import crypto from 'crypto';
+import { URLSearchParams } from 'node:url';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+// ① Your live HitPay API
+const HITPAY_BASE_URL = 'https://api.hit-pay.com/v1';
 
-const SHOPIFY_STORE = process.env.SHOPIFY_STORE;
-const ACCESS_TOKEN = process.env.SHOPIFY_ADMIN_API_TOKEN;
+// ② Env vars you must set in Railway
+const {
+  SHOPIFY_STORE,
+  ACCESS_TOKEN,
+  HITPAY_API_KEY,
+  HITPAY_WEBHOOK_SALT,
+} = process.env;
 
+// ③ Fail fast if any required var is missing
+if (!SHOPIFY_STORE || !ACCESS_TOKEN || !HITPAY_API_KEY || !HITPAY_WEBHOOK_SALT) {
+  console.error('⚠️ Missing one of SHOPIFY_STORE, ACCESS_TOKEN, HITPAY_API_KEY, HITPAY_WEBHOOK_SALT');
+  process.exit(1);
+}
+
+// ④ Middleware
+app.use(cors({ origin: '*', methods: ['GET','POST','OPTIONS'], allowedHeaders: ['Content-Type'] }));
+app.options('*', cors());
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: false, verify: (req, _res, buf) => (req.rawBody = buf) }));
+
+// ⑤ Startup log
+console.log(`🟢 Server starting with routes:`);
+app._router && console.log(app._router.stack.map(r => r.route && r.route.path));
+
+// ⑥ Health check
+app.get('/', (_req, res) => res.send('OK'));
+
+// ⑦ Debug ping
+app.post('/ping', (req, res) => {
+  console.log('🔥 Received POST /ping:', req.body);
+  res.json({ ok: true, received: req.body });
+});
+
+// ⑧ Shopify: fetch all customers
 async function fetchAllCustomers() {
   let all = [];
-  let url = `https://${SHOPIFY_STORE}/admin/api/2024-07/customers.json?limit=250`;
-  while (url) {
-    const res = await fetch(url, {
-      headers: {
-        'X-Shopify-Access-Token': ACCESS_TOKEN,
-        'Content-Type': 'application/json',
-      },
+  let nextUrl = `https://${SHOPIFY_STORE}/admin/api/2025-07/customers.json?limit=250`;
+  while (nextUrl) {
+    const resp = await fetch(nextUrl, {
+      headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN, 'Content-Type': 'application/json' },
     });
-    const data = await res.json();
-    all = all.concat(data.customers || []);
-    const link = res.headers.get('link');
-    url = null;
-    if (link && link.includes('rel="next"')) {
-      url = link.match(/<([^>]+)>; rel="next"/)[1];
-    }
+    const { customers } = await resp.json();
+    all = all.concat(customers || []);
+    const link = resp.headers.get('link');
+    nextUrl = link?.match(/<([^>]+)>;\s*rel="next"/)?.[1] || null;
   }
   return all;
 }
 
+// ⑨ Shopify: find-by-phone
 app.get('/find-by-phone', async (req, res) => {
-  const last8 = req.query.last8;
-  if (!last8 || !/^\d{8}$/.test(last8)) {
-    return res.status(400).json({ error: 'Invalid last8' });
-  }
+  const { last8 } = req.query;
+  if (!/^\d{8}$/.test(last8)) return res.status(400).json({ error: 'Invalid phone query' });
   try {
-    const customers = await fetchAllCustomers();
-    const match = customers.find(c => {
-      if (!c.phone) return false;
-      const digits = c.phone.replace(/\D/g, '');
-      return digits.slice(-8) === last8;
+    const cust = (await fetchAllCustomers()).find(c =>
+      c.phone?.replace(/\D/g, '').endsWith(last8)
+    );
+    if (!cust) return res.status(404).json({ error: 'Not found' });
+    res.json({
+      id: cust.id,
+      displayName: [cust.first_name, cust.last_name].filter(Boolean).join(' '),
+      email: cust.email,
+      phone: cust.phone,
     });
-    if (match) {
-      res.json({
-        id: match.id,
-        displayName: (match.first_name || '') + ' ' + (match.last_name || ''),
-        email: match.email,
-        phone: match.phone,
-      });
-    } else {
-      res.status(404).json({ error: 'Not found' });
-    }
   } catch (e) {
-    res.status(500).json({ error: e.message || 'Internal error' });
+    console.error('📞 find-by-phone error', e);
+    res.status(500).json({ error: e.message || 'Internal' });
   }
 });
 
+// ⑩ Shopify: create-customer
 app.post('/create-customer', async (req, res) => {
   const { firstName, lastName, email, phone } = req.body;
-  if (!firstName || !email || !phone) {
-    return res.status(400).json({ error: 'Missing required fields.' });
-  }
-  const safeLastName = typeof lastName === 'string' ? lastName : '';
+  if (!firstName || !lastName || !email || !phone) return res.status(400).json({ error: 'Missing required fields' });
   try {
-    const response = await fetch(`https://${SHOPIFY_STORE}/admin/api/2024-07/customers.json`, {
+    const resp = await fetch(`https://${SHOPIFY_STORE}/admin/api/2025-07/customers.json`, {
       method: 'POST',
-      headers: {
-        'X-Shopify-Access-Token': ACCESS_TOKEN,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        customer: {
-          first_name: firstName,
-          last_name: safeLastName,
-          email,
-          phone,
-        }
-      })
+      headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customer: { first_name: firstName, last_name: lastName, email, phone } }),
     });
-    const data = await response.json();
-    if (data.errors || data.error) {
-      return res.status(400).json({ error: data.errors || data.error });
-    }
-    return res.json({ customerId: data.customer.id });
+    const data = await resp.json();
+    if (data.errors) return res.status(400).json({ error: 'Shopify error', detail: data.errors });
+    res.json({ customerId: data.customer.id });
   } catch (e) {
-    res.status(500).json({ error: e.message || 'Failed to create customer' });
+    console.error('👤 create-customer error', e);
+    res.status(500).json({ error: e.message || 'Unknown' });
   }
 });
 
-app.get('/', (req, res) => res.send('Shopify Customer API running.'));
+// ⑪ Shopify: check-order
+app.post('/check-order', async (req, res) => {
+  const { customerId, since, amount } = req.body;
+  if (!customerId || !since || amount == null) return res.status(400).json({ error: 'Missing params' });
+  try {
+    const params = new URLSearchParams({ status: 'any', customer_id: String(customerId), created_at_min: since, limit: '250' });
+    const resp = await fetch(`https://${SHOPIFY_STORE}/admin/api/2025-07/orders.json?${params}`, {
+      headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN, 'Content-Type': 'application/json' },
+    });
+    const { orders } = await resp.json();
+    const found = orders.some(o => parseFloat(o.total_price) === Number(amount));
+    res.json({ orderFound: found });
+  } catch (e) {
+    console.error('📦 check-order error', e);
+    res.status(500).json({ error: 'Failed to check order' });
+  }
+});
 
-app.listen(PORT, () => console.log('Server running on port', PORT));
+app.post('/hitpay/create', async (req, res) => {
+  console.log('🔥 Received POST /hitpay/create:', req.body);
+  const { amount, email, webhook } = req.body;
+  const parsed = Number(amount);
+  if (!parsed || parsed <= 0) {
+    return res.status(400).json({ error: 'Invalid amount' });
+  }
+
+  // Build form data exactly per HitPay docs
+  const params = new URLSearchParams();
+  params.append('amount', Math.round(parsed * 100).toString());   // in cents
+  params.append('currency', 'SGD');
+  params.append('payment_methods[]', 'paynow_online');
+  params.append('generate_qr', 'true');
+  params.append('reference_number', `POS-${Date.now()}`);
+  params.append(
+    'redirect_url',
+    webhook || `https://shopify-customer-api-production.up.railway.app/hitpay/webhook`
+  );
+  if (email)   params.append('email', email);
+  if (webhook) params.append('webhook', webhook);
+
+  console.log('➡️ HitPay payload:', params.toString());
+
+  try {
+    const resp = await fetch(`${HITPAY_BASE_URL}/payment-requests`, {
+      method: 'POST',
+      headers: {
+        'X-BUSINESS-API-KEY': HITPAY_API_KEY,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: params.toString(),
+    });
+    const data = await resp.json();
+    console.log('⬅️ HitPay response:', data);
+
+    if (!resp.ok || !data.qr_code_data?.qr_code) {
+      return res
+        .status(resp.status)
+        .json({ error: 'HitPay create failed', detail: data });
+    }
+
+    return res.json({
+      paymentRequestId: data.id,
+      qrCodeUrl: data.qr_code_data.qr_code,
+      checkoutUrl: data.url,
+    });
+  } catch (err) {
+    console.error('🔥 HitPay create exception:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ⑬ HitPay: Check Payment Status
+app.get('/hitpay/status', async (req, res) => {
+  console.log('🔥 Received GET /hitpay/status:', req.query);
+  const { paymentRequestId } = req.query;
+  if (!paymentRequestId) {
+    return res.status(400).json({ error: 'Missing paymentRequestId' });
+  }
+  try {
+    const resp = await fetch(
+      `${HITPAY_BASE_URL}/payment-requests/${paymentRequestId}`,
+      { headers: { 'X-BUSINESS-API-KEY': HITPAY_API_KEY } }
+    );
+    const data = await resp.json();
+    console.log('⬅️ Status response:', data);
+    return res.json({ success: data.status === 'completed' });
+  } catch (err) {
+    console.error('🔥 HitPay status exception:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ⑭ HitPay: Webhook Receiver
+app.post(
+  '/hitpay/webhook',
+  express.urlencoded({ extended: false }),
+  (req, res) => {
+    console.log('🔥 Received POST /hitpay/webhook:', req.body);
+    const { hmac, ...fields } = req.body;
+    const sorted = Object.keys(fields)
+      .sort()
+      .map((k) => k + fields[k])
+      .join('');
+    const digest = crypto
+      .createHmac('sha256', HITPAY_WEBHOOK_SALT)
+      .update(sorted)
+      .digest('hex');
+
+    if (digest !== hmac) {
+      console.warn('🚨 Webhook signature mismatch', { expected: digest, received: hmac });
+      return res.status(403).send('Invalid signature');
+    }
+
+    console.log('✅ Valid webhook payload:', fields);
+    // TODO: lookup paymentRequestId and mark order paid in your system
+    res.sendStatus(200);
+  }
+);
+
+// ⑮ Start server
+app.listen(PORT, () => console.log(`🟩 Server listening on port ${PORT}`));

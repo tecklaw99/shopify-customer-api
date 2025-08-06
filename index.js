@@ -221,5 +221,34 @@ app.post(
   }
 );
 
+app.use(express.json());
+app.use(cors());
+
+// In‐memory map: device/sessionId → last heartbeat timestamp
+const lastSeen = new Map();
+
+// Heartbeat endpoint: called by post-purchase block every 2 s
+app.post('/heartbeat', (req, res) => {
+  const { sessionId } = req.body;
+  if (typeof sessionId !== 'string') {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  lastSeen.set(sessionId, Date.now());
+  res.json({ ok: true });
+});
+
+// Check endpoint: polled by POS tile every 2 s
+app.get('/check', (req, res) => {
+  const sessionId = req.query.sessionId;
+  if (typeof sessionId !== 'string') {
+    return res.status(400).json({ error: 'sessionId query parameter is required' });
+  }
+  const last = lastSeen.get(sessionId) || 0;
+  // trigger if no heartbeat in the last 3.5 s
+  const trigger = (Date.now() - last) > 3500;
+  res.json({ trigger });
+});
+
+
 // ⑮ Start server
 app.listen(PORT, () => console.log(`🟩 Server listening on port ${PORT}`));

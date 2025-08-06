@@ -208,7 +208,12 @@ app.post('/hitpay/webhook', express.urlencoded({ extended: false }), (req, res) 
 
 // In-memory session heartbeats
 const lastSeen = new Map();
- 
+app.post('/heartbeat', (req, res) => {
+  const { sessionId } = req.body;
+  if (typeof sessionId !== 'string') return res.status(400).json({ error: 'sessionId is required' });
+  lastSeen.set(sessionId, Date.now());
+  res.json({ ok: true });
+});
 
 app.get('/check', (req, res) => {
   const sessionId = req.query.sessionId;

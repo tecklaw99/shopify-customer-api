@@ -224,9 +224,11 @@ app.post(
 app.use(express.json());
 app.use(cors());
 
+// In‐memory map: device/sessionId → last heartbeat timestamp
+const lastSeen = new Map();
+
 // Heartbeat endpoint: called by post-purchase block every 2 s
 app.post('/heartbeat', (req, res) => {
-  const lastSeen = new Map();
   const { sessionId } = req.body;
   if (typeof sessionId !== 'string') {
     return res.status(400).json({ error: 'sessionId is required' });

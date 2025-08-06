@@ -217,8 +217,16 @@ app.post('/heartbeat', (req, res) => {
 
 app.get('/check', (req, res) => {
   const sessionId = req.query.sessionId;
-  if (typeof sessionId !== 'string') return res.status(400).json({ error: 'sessionId query parameter is required' });
-  const last = lastSeen.get(sessionId) || 0;
+  if (typeof sessionId !== 'string') {
+    return res.status(400).json({ error: 'sessionId query parameter is required' });
+  }
+
+  // If we've never seen a heartbeat for this session, don't trigger
+  if (!lastSeen.has(sessionId)) {
+    return res.json({ trigger: false });
+  }
+
+  const last = lastSeen.get(sessionId);
   const trigger = (Date.now() - last) > 3500;
   res.json({ trigger });
 });

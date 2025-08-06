@@ -7,7 +7,7 @@ import crypto from 'crypto';
 import { URLSearchParams } from 'node:url';
 
 const app = express();
-const PORT = process.env.PORT || 8000;
+const PORT = process.env.PORT || 3000;
 
 // ① Your live HitPay API
 const HITPAY_BASE_URL = 'https://api.hit-payapp.com/v1';
@@ -76,7 +76,7 @@ app.get('/find-by-phone', async (req, res) => {
       phone: cust.phone,
     });
   } catch (e) {
-    console.error('📞 find-by-phone error', e);
+    console.error(' find-by-phone error', e);
     res.status(500).json({ error: e.message || 'Internal' });
   }
 });
@@ -95,7 +95,7 @@ app.post('/create-customer', async (req, res) => {
     if (data.errors) return res.status(400).json({ error: 'Shopify error', detail: data.errors });
     res.json({ customerId: data.customer.id });
   } catch (e) {
-    console.error('👤 create-customer error', e);
+    console.error(' create-customer error', e);
     res.status(500).json({ error: e.message || 'Unknown' });
   }
 });

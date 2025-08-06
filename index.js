@@ -208,12 +208,7 @@ app.post('/hitpay/webhook', express.urlencoded({ extended: false }), (req, res) 
 
 // In-memory session heartbeats
 const lastSeen = new Map();
-app.post('/heartbeat', (req, res) => {
-  const { sessionId } = req.body;
-  if (typeof sessionId !== 'string') return res.status(400).json({ error: 'sessionId is required' });
-  lastSeen.set(sessionId, Date.now());
-  res.json({ ok: true });
-});
+ 
 
 app.get('/check', (req, res) => {
   const sessionId = req.query.sessionId;
@@ -221,15 +216,24 @@ app.get('/check', (req, res) => {
     return res.status(400).json({ error: 'sessionId query parameter is required' });
   }
 
-  // If we've never seen a heartbeat for this session, don't trigger
   if (!lastSeen.has(sessionId)) {
+    // no heartbeat seen yet (or we cleared it after the last trigger)
     return res.json({ trigger: false });
   }
 
   const last = lastSeen.get(sessionId);
-  const trigger = (Date.now() - last) > 3500;
-  res.json({ trigger });
+  const timedOut = (Date.now() - last) > 3500;
+
+  if (timedOut) {
+    // fire trigger once, then clear so it won't re-trigger until another heartbeat
+    lastSeen.delete(sessionId);
+    return res.json({ trigger: true });
+  }
+
+  // still within heartbeat window
+  res.json({ trigger: false });
 });
+
 
 // ⑮ Start server
 app.listen(PORT, () => console.log(`🟩 Server listening on port ${PORT}`));

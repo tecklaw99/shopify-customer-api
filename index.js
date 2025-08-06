@@ -63,12 +63,36 @@ async function fetchAllCustomers() {
 // ⑨ Shopify: find-by-phone
 app.get('/find-by-phone', async (req, res) => {
   const { last8 } = req.query;
-  if (!/^[0-9]{8}$/.test(last8)) return res.status(400).json({ error: 'Invalid phone query' });
+  if (!/^[0-9]{8}$/.test(last8)) {
+    return res.status(400).json({ error: 'Invalid phone query' });
+  }
+
   try {
-    const cust = (await fetchAllCustomers()).find(c =>
+    // Use the Shopify search endpoint—no pagination, much faster
+    const url = `https://${SHOPIFY_STORE}/admin/api/2025-07/customers/search.json?` +
+                `query=phone:*${encodeURIComponent(last8)}`;
+    console.log('Searching customers via:', url);
+    
+    const resp = await fetch(url, {
+      headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN }
+    });
+    console.log('Shopify status:', resp.status);
+    
+    if (!resp.ok) {
+      const err = await resp.text();
+      console.error('Search error body:', err);
+      return res.status(resp.status).json({ error: 'Shopify search failed' });
+    }
+
+    const { customers } = await resp.json();
+    // Find the best match just in case there are multiple
+    const cust = customers.find(c => 
       c.phone?.replace(/\D/g, '').endsWith(last8)
     );
-    if (!cust) return res.status(404).json({ error: 'Not found' });
+    if (!cust) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
     res.json({
       id: cust.id,
       displayName: [cust.first_name, cust.last_name].filter(Boolean).join(' '),
@@ -76,8 +100,8 @@ app.get('/find-by-phone', async (req, res) => {
       phone: cust.phone,
     });
   } catch (e) {
-    console.error(' find-by-phone error', e);
-    res.status(500).json({ error: e.message || 'Internal' });
+    console.error('📞 find-by-phone exception', e);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

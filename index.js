@@ -105,6 +105,47 @@ app.get('/find-by-phone', async (req, res) => {
   }
 });
 
+
+// ⑨½ Shopify: find-by-email
+app.get('/find-by-email', async (req, res) => {
+  const { email } = req.query;
+  if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Invalid email query' });
+  }
+
+  try {
+    // Use Shopify’s search endpoint so you don’t have to page through everyone
+    const url = `https://${SHOPIFY_STORE}/admin/api/2025-07/customers/search.json?query=email:${encodeURIComponent(email)}`;
+    const resp = await fetch(url, {
+      headers: { 
+        'X-Shopify-Access-Token': ACCESS_TOKEN,
+        'Content-Type': 'application/json'
+      },
+    });
+    if (!resp.ok) {
+      const body = await resp.text();
+      console.error('Shopify search error:', body);
+      return res.status(resp.status).json({ error: 'Shopify search failed' });
+    }
+    const { customers } = await resp.json();
+    // Pick the exact-match customer
+    const cust = customers.find(c => c.email === email);
+    if (!cust) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    return res.json({
+      id: cust.id,
+      displayName: [cust.first_name, cust.last_name].filter(Boolean).join(' '),
+      email: cust.email,
+      phone: cust.phone,
+    });
+  } catch (e) {
+    console.error('📧 find-by-email error', e);
+    res.status(500).json({ error: e.message || 'Internal' });
+  }
+});
+
+
 // ⑩ Shopify: create-customer
 app.post('/create-customer', async (req, res) => {
   const { firstName, lastName, email, phone } = req.body;

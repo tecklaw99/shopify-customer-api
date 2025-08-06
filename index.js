@@ -10,7 +10,7 @@ const app = express();
 const PORT = process.env.PORT || 8000;
 
 // ① Your live HitPay API
-const HITPAY_BASE_URL = 'https://api.hit-pay.com/v1';
+const HITPAY_BASE_URL = 'https://api.hit-payapp.com/v1';
 
 // ② Env vars you must set in Railway
 const {
@@ -26,9 +26,8 @@ if (!SHOPIFY_STORE || !ACCESS_TOKEN || !HITPAY_API_KEY || !HITPAY_WEBHOOK_SALT) 
   process.exit(1);
 }
 
-// ④ Middleware
+// ④ Global middleware
 app.use(cors({ origin: '*', methods: ['GET','POST','OPTIONS'], allowedHeaders: ['Content-Type'] }));
-app.options('*', cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false, verify: (req, _res, buf) => (req.rawBody = buf) }));
 
@@ -64,7 +63,7 @@ async function fetchAllCustomers() {
 // ⑨ Shopify: find-by-phone
 app.get('/find-by-phone', async (req, res) => {
   const { last8 } = req.query;
-  if (!/^\d{8}$/.test(last8)) return res.status(400).json({ error: 'Invalid phone query' });
+  if (!/^[0-9]{8}$/.test(last8)) return res.status(400).json({ error: 'Invalid phone query' });
   try {
     const cust = (await fetchAllCustomers()).find(c =>
       c.phone?.replace(/\D/g, '').endsWith(last8)
@@ -119,72 +118,47 @@ app.post('/check-order', async (req, res) => {
   }
 });
 
+// ⑫ HitPay: create payment request
 app.post('/hitpay/create', async (req, res) => {
   console.log('🔥 Received POST /hitpay/create:', req.body);
   const { amount, email, webhook } = req.body;
   const parsed = Number(amount);
-  if (!parsed || parsed <= 0) {
-    return res.status(400).json({ error: 'Invalid amount' });
-  }
+  if (!parsed || parsed <= 0) return res.status(400).json({ error: 'Invalid amount' });
 
-  // Build form data exactly per HitPay docs
   const params = new URLSearchParams();
-  params.append('amount', Math.round(parsed * 100).toString());   // in cents
+  params.append('amount', Math.round(parsed * 100).toString());
   params.append('currency', 'SGD');
   params.append('payment_methods[]', 'paynow_online');
   params.append('generate_qr', 'true');
   params.append('reference_number', `POS-${Date.now()}`);
-  params.append(
-    'redirect_url',
-    webhook || `https://shopify-customer-api-production.up.railway.app/hitpay/webhook`
-  );
-  if (email)   params.append('email', email);
-  if (webhook) params.append('webhook', webhook);
-
-  console.log('➡️ HitPay payload:', params.toString());
+  params.append('redirect_url', webhook || `https://shopify-customer-api-production.up.railway.app/hitpay/webhook`);
+  if (email) params.append('email', email);
 
   try {
     const resp = await fetch(`${HITPAY_BASE_URL}/payment-requests`, {
       method: 'POST',
-      headers: {
-        'X-BUSINESS-API-KEY': HITPAY_API_KEY,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'X-Requested-With': 'XMLHttpRequest',
-      },
+      headers: { 'X-BUSINESS-API-KEY': HITPAY_API_KEY, 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
       body: params.toString(),
     });
     const data = await resp.json();
     console.log('⬅️ HitPay response:', data);
-
     if (!resp.ok || !data.qr_code_data?.qr_code) {
-      return res
-        .status(resp.status)
-        .json({ error: 'HitPay create failed', detail: data });
+      return res.status(resp.status).json({ error: 'HitPay create failed', detail: data });
     }
-
-    return res.json({
-      paymentRequestId: data.id,
-      qrCodeUrl: data.qr_code_data.qr_code,
-      checkoutUrl: data.url,
-    });
+    return res.json({ paymentRequestId: data.id, qrCodeUrl: data.qr_code_data.qr_code, checkoutUrl: data.url });
   } catch (err) {
     console.error('🔥 HitPay create exception:', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });
 
-// ⑬ HitPay: Check Payment Status
+// ⑬ HitPay: status
 app.get('/hitpay/status', async (req, res) => {
   console.log('🔥 Received GET /hitpay/status:', req.query);
   const { paymentRequestId } = req.query;
-  if (!paymentRequestId) {
-    return res.status(400).json({ error: 'Missing paymentRequestId' });
-  }
+  if (!paymentRequestId) return res.status(400).json({ error: 'Missing paymentRequestId' });
   try {
-    const resp = await fetch(
-      `${HITPAY_BASE_URL}/payment-requests/${paymentRequestId}`,
-      { headers: { 'X-BUSINESS-API-KEY': HITPAY_API_KEY } }
-    );
+    const resp = await fetch(`${HITPAY_BASE_URL}/payment-requests/${paymentRequestId}`, { headers: { 'X-BUSINESS-API-KEY': HITPAY_API_KEY } });
     const data = await resp.json();
     console.log('⬅️ Status response:', data);
     return res.json({ success: data.status === 'completed' });
@@ -194,61 +168,36 @@ app.get('/hitpay/status', async (req, res) => {
   }
 });
 
-// ⑭ HitPay: Webhook Receiver
-app.post(
-  '/hitpay/webhook',
-  express.urlencoded({ extended: false }),
-  (req, res) => {
-    console.log('🔥 Received POST /hitpay/webhook:', req.body);
-    const { hmac, ...fields } = req.body;
-    const sorted = Object.keys(fields)
-      .sort()
-      .map((k) => k + fields[k])
-      .join('');
-    const digest = crypto
-      .createHmac('sha256', HITPAY_WEBHOOK_SALT)
-      .update(sorted)
-      .digest('hex');
-
-    if (digest !== hmac) {
-      console.warn('🚨 Webhook signature mismatch', { expected: digest, received: hmac });
-      return res.status(403).send('Invalid signature');
-    }
-
-    console.log('✅ Valid webhook payload:', fields);
-    // TODO: lookup paymentRequestId and mark order paid in your system
-    res.sendStatus(200);
+// ⑭ HitPay: webhook
+app.post('/hitpay/webhook', express.urlencoded({ extended: false }), (req, res) => {
+  console.log('🔥 Received POST /hitpay/webhook:', req.body);
+  const { hmac, ...fields } = req.body;
+  const sorted = Object.keys(fields).sort().map(k => k + fields[k]).join('');
+  const digest = crypto.createHmac('sha256', HITPAY_WEBHOOK_SALT).update(sorted).digest('hex');
+  if (digest !== hmac) {
+    console.warn('🚨 Webhook signature mismatch', { expected: digest, received: hmac });
+    return res.status(403).send('Invalid signature');
   }
-);
+  console.log('✅ Valid webhook payload:', fields);
+  res.sendStatus(200);
+});
 
-app.use(express.json());
-app.use(cors());
-
-// In‐memory map: device/sessionId → last heartbeat timestamp
+// In-memory session heartbeats
 const lastSeen = new Map();
-
-// Heartbeat endpoint: called by post-purchase block every 2 s
 app.post('/heartbeat', (req, res) => {
   const { sessionId } = req.body;
-  if (typeof sessionId !== 'string') {
-    return res.status(400).json({ error: 'sessionId is required' });
-  }
+  if (typeof sessionId !== 'string') return res.status(400).json({ error: 'sessionId is required' });
   lastSeen.set(sessionId, Date.now());
   res.json({ ok: true });
 });
 
-// Check endpoint: polled by POS tile every 2 s
 app.get('/check', (req, res) => {
   const sessionId = req.query.sessionId;
-  if (typeof sessionId !== 'string') {
-    return res.status(400).json({ error: 'sessionId query parameter is required' });
-  }
+  if (typeof sessionId !== 'string') return res.status(400).json({ error: 'sessionId query parameter is required' });
   const last = lastSeen.get(sessionId) || 0;
-  // trigger if no heartbeat in the last 3.5 s
   const trigger = (Date.now() - last) > 3500;
   res.json({ trigger });
 });
-
 
 // ⑮ Start server
 app.listen(PORT, () => console.log(`🟩 Server listening on port ${PORT}`));

@@ -258,21 +258,20 @@ app.post('/heartbeat', (req, res) => {
   }
 
   const entry = sessions.get(sessionId);
-
-  if (!entry) {
-    // First heartbeat—seed with fired=false
-    sessions.set(sessionId, { lastSeen: Date.now(), fired: false });
-  } else if (!entry.fired) {
-    // Only refresh lastSeen *if* we haven't already triggered
+  if (entry) {
     entry.lastSeen = Date.now();
+  } else {
+    // First heartbeat: seed with trigger=false  
+    sessions.set(sessionId, { lastSeen: Date.now(), trigger: false });
   }
-  // If entry.fired === true, we do *not* update lastSeen,
-  // so that it stays timed‐out thereafter.
 
   return res.json({ ok: true });
 });
 
-// ── 2) Check: fire once per sessionId ────────────────────────────────────────────────
+// ─── 2) Check for a timeout trigger ────────────────────────────────
+// Called by each POS session every 2s.  
+// If *this* session has timed out, flip its trigger true once and return true.
+// Otherwise return false—leaving *all other* sessions untouched.
 app.get('/check', (req, res) => {
   const sessionId = req.query.sessionId;
   if (typeof sessionId !== 'string') {
@@ -283,22 +282,22 @@ app.get('/check', (req, res) => {
 
   const entry = sessions.get(sessionId);
   if (!entry) {
-    // We’ve never seen a heartbeat for this session
+    // No heartbeat seen yet → no trigger
     return res.json({ trigger: false });
   }
 
-  // If we’ve already fired, always false
-  if (entry.fired) {
+  // If already triggered, always return false from now on
+  if (entry.trigger) {
     return res.json({ trigger: false });
   }
 
-  // If we’ve now timed out, mark fired and return true
+  // If timed out, set trigger and return true **only for this session**
   if (Date.now() - entry.lastSeen > TIMEOUT_MS) {
-    entry.fired = true;
+    entry.trigger = true;
     return res.json({ trigger: true });
   }
 
-  // Otherwise, still alive but not yet timed out
+  // Still within heartbeat window → still false
   return res.json({ trigger: false });
 });
 

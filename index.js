@@ -253,58 +253,33 @@ const TIMEOUT_MS = 3500;
 
 app.post('/heartbeat', (req, res) => {
   const { sessionId } = req.body;
-  if (typeof sessionId !== 'string') {
-    return res.status(400).json({ error: 'sessionId is required' });
-  }
-
-  const now = Date.now();
-  if (!sessions.has(sessionId)) {
-    sessions.set(sessionId, { lastSeen: now, triggered: false });
-  } else {
-    // only update lastSeen; do NOT clear the triggered flag
-    sessions.get(sessionId).lastSeen = now;
-  }
-
-  return res.json({ ok: true });
+  if (typeof sessionId !== 'string') return res.status(400).json({ error: 'sessionId is required' });
+  lastSeen.set(sessionId, Date.now());
+  res.json({ ok: true });
 });
 
-// ─── 2) Check for timeout trigger ─────────────────────────────────────────
-// Called by each device every 2 s. If **this** session has timed out AND
-// has not yet triggered, return true exactly once and mark it triggered.
-// All other sessions (and subsequent calls) return false.
 app.get('/check', (req, res) => {
   const sessionId = req.query.sessionId;
   if (typeof sessionId !== 'string') {
-    return res
-      .status(400)
-      .json({ error: 'sessionId query parameter is required' });
+    return res.status(400).json({ error: 'sessionId query parameter is required' });
   }
 
-  const entry = sessions.get(sessionId);
-  if (!entry) {
-    // no heartbeat seen yet for this session
+  if (!lastSeen.has(sessionId)) {
+    // no heartbeat seen yet (or we cleared it after the last trigger)
     return res.json({ trigger: false });
   }
 
-  // if already triggered once, never trigger again
-  if (entry.triggered) {
-    return res.json({ trigger: false });
-  }
+  const last = lastSeen.get(sessionId);
+  const timedOut = (Date.now() - last) > 3500;
 
-  // if heartbeat gap exceeds TIMEOUT_MS, trigger now
-  if (Date.now() - entry.lastSeen > TIMEOUT_MS) {
-    entry.triggered = true;   // mark it so it never fires again
+  if (timedOut) {
+    // fire trigger once, then clear so it won't re-trigger until another heartbeat
+    lastSeen.delete(sessionId);
     return res.json({ trigger: true });
   }
 
-  // otherwise, still within the heartbeat window
+  // still within heartbeat window
   return res.json({ trigger: false });
-});
-
-// … your other routes remain unchanged …
-
-app.listen(process.env.PORT || 3000, () => {
-  console.log(`Server listening on ${process.env.PORT || 3000}`);
 });
 
 

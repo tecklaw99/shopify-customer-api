@@ -257,17 +257,22 @@ app.post('/heartbeat', (req, res) => {
     return res.status(400).json({ error: 'sessionId is required' });
   }
 
-  if (!sessions.has(sessionId)) {
-    // First time we see this sessionId → seed it
-    sessions.set(sessionId, { lastSeen: Date.now(), fired: false });
-  } else {
-    // Only update lastSeen, never touch 'fired'
-    sessions.get(sessionId).lastSeen = Date.now();
-  }
+  const entry = sessions.get(sessionId);
 
-  res.json({ ok: true });
+  if (!entry) {
+    // First heartbeat—seed with fired=false
+    sessions.set(sessionId, { lastSeen: Date.now(), fired: false });
+  } else if (!entry.fired) {
+    // Only refresh lastSeen *if* we haven't already triggered
+    entry.lastSeen = Date.now();
+  }
+  // If entry.fired === true, we do *not* update lastSeen,
+  // so that it stays timed‐out thereafter.
+
+  return res.json({ ok: true });
 });
 
+// ── 2) Check: fire once per sessionId ────────────────────────────────────────────────
 app.get('/check', (req, res) => {
   const sessionId = req.query.sessionId;
   if (typeof sessionId !== 'string') {
@@ -278,22 +283,22 @@ app.get('/check', (req, res) => {
 
   const entry = sessions.get(sessionId);
   if (!entry) {
-    // we’ve never heard from this session yet
+    // We’ve never seen a heartbeat for this session
     return res.json({ trigger: false });
   }
 
-  // Already fired once?  Always false thereafter
+  // If we’ve already fired, always false
   if (entry.fired) {
     return res.json({ trigger: false });
   }
 
-  // On timeout, mark fired and return true
+  // If we’ve now timed out, mark fired and return true
   if (Date.now() - entry.lastSeen > TIMEOUT_MS) {
     entry.fired = true;
     return res.json({ trigger: true });
   }
 
-  // Still alive, not timed out
+  // Otherwise, still alive but not yet timed out
   return res.json({ trigger: false });
 });
 

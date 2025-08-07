@@ -248,35 +248,45 @@ app.post('/hitpay/webhook', express.urlencoded({ extended: false }), (req, res) 
 });
 
 // In-memory session heartbeats
-const lastSeen = new Map();
+const sessions = new Map();
+const TIMEOUT_MS = 3500;
+
 app.post('/heartbeat', (req, res) => {
   const { sessionId } = req.body;
-  if (typeof sessionId !== 'string') return res.status(400).json({ error: 'sessionId is required' });
-  lastSeen.set(sessionId, Date.now());
+  if (typeof sessionId !== 'string') {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  // Reset the heartbeat timestamp and clear any previous “fired” mark
+  sessions.set(sessionId, { lastSeen: Date.now(), fired: false });
   res.json({ ok: true });
 });
 
 app.get('/check', (req, res) => {
   const sessionId = req.query.sessionId;
   if (typeof sessionId !== 'string') {
-    return res.status(400).json({ error: 'sessionId query parameter is required' });
+    return res
+      .status(400)
+      .json({ error: 'sessionId query parameter is required' });
   }
 
-  if (!lastSeen.has(sessionId)) {
-    // no heartbeat seen yet (or we cleared it after the last trigger)
+  const entry = sessions.get(sessionId);
+  if (!entry) {
+    // never saw a heartbeat from this session yet
     return res.json({ trigger: false });
   }
 
-  const last = lastSeen.get(sessionId);
-  const timedOut = (Date.now() - last) > 3500;
+  // If we've already fired once for this session, never fire again
+  if (entry.fired) {
+    return res.json({ trigger: false });
+  }
 
-  if (timedOut) {
-    // fire trigger once, then clear so it won't re-trigger until another heartbeat
-    lastSeen.delete(sessionId);
+  // If it’s now timed out, mark it fired and return true
+  if (Date.now() - entry.lastSeen > TIMEOUT_MS) {
+    entry.fired = true;
     return res.json({ trigger: true });
   }
 
-  // still within heartbeat window
+  // Still within the heartbeat window
   return res.json({ trigger: false });
 });
 

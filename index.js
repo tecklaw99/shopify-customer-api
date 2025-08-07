@@ -265,7 +265,7 @@ app.get('/check', (req, res) => {
 
   if (!lastSeen.has(sessionId)) {
     // no heartbeat seen yet (or we cleared it after the last trigger)
-    return res.json({ sessionId });
+    return res.json({ trigger: false });
   }
 
   const last = lastSeen.get(sessionId);

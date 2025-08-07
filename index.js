@@ -248,8 +248,7 @@ app.post('/hitpay/webhook', express.urlencoded({ extended: false }), (req, res) 
 });
 
 // In-memory session heartbeats
-const sessions = new Map();
-const TIMEOUT_MS = 3500;
+const lastSeen = new Map(); // ← FIX HERE
 
 app.post('/heartbeat', (req, res) => {
   const { sessionId } = req.body;

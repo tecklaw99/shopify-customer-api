@@ -277,6 +277,7 @@ app.get('/check', (req, res) => {
   }
 
   // still within heartbeat window
+  return res.json({ trigger: false });
 });
 
 

@@ -256,8 +256,15 @@ app.post('/heartbeat', (req, res) => {
   if (typeof sessionId !== 'string') {
     return res.status(400).json({ error: 'sessionId is required' });
   }
-  // Reset the heartbeat timestamp and clear any previous “fired” mark
-  sessions.set(sessionId, { lastSeen: Date.now(), fired: false });
+
+  if (!sessions.has(sessionId)) {
+    // First time we see this sessionId → seed it
+    sessions.set(sessionId, { lastSeen: Date.now(), fired: false });
+  } else {
+    // Only update lastSeen, never touch 'fired'
+    sessions.get(sessionId).lastSeen = Date.now();
+  }
+
   res.json({ ok: true });
 });
 
@@ -271,22 +278,22 @@ app.get('/check', (req, res) => {
 
   const entry = sessions.get(sessionId);
   if (!entry) {
-    // never saw a heartbeat from this session yet
+    // we’ve never heard from this session yet
     return res.json({ trigger: false });
   }
 
-  // If we've already fired once for this session, never fire again
+  // Already fired once?  Always false thereafter
   if (entry.fired) {
     return res.json({ trigger: false });
   }
 
-  // If it’s now timed out, mark it fired and return true
+  // On timeout, mark fired and return true
   if (Date.now() - entry.lastSeen > TIMEOUT_MS) {
     entry.fired = true;
     return res.json({ trigger: true });
   }
 
-  // Still within the heartbeat window
+  // Still alive, not timed out
   return res.json({ trigger: false });
 });
 

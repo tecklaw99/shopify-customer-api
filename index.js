@@ -10,7 +10,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ① Your live HitPay API
-const HITPAY_BASE_URL = 'https://api.hit-payapp.com/v1';
+const HITPAY_BASE_URL = 'https://api.hit-pay.com/v1';
 
 // ② Env vars you must set in Railway
 const {
@@ -186,7 +186,7 @@ app.post('/check-order', async (req, res) => {
 // ⑫ HitPay: create payment request
 app.post('/hitpay/create', async (req, res) => {
   console.log('🔥 Received POST /hitpay/create:', req.body);
-  const { amount, email, webhook } = req.body;
+  const { amount } = req.body;
   const parsed = Number(amount);
   if (!parsed || parsed <= 0) return res.status(400).json({ error: 'Invalid amount' });
 
@@ -276,8 +276,9 @@ app.get('/check', (req, res) => {
     lastSeen.delete(sessionId);
     return res.json({ trigger: true });
   }
-
+  return res.json({ trigger: false });
 });
+
 
 
 // ⑮ Start server

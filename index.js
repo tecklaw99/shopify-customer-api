@@ -10,7 +10,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ① Your live HitPay API
-const HITPAY_BASE_URL = 'https://api.hit-pay.com/v1';
+const HITPAY_BASE_URL = 'https://api.sandbox.hit-pay.com/v1';
 
 // ② Env vars you must set in Railway
 const {

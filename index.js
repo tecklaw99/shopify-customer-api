@@ -191,10 +191,10 @@ app.post('/hitpay/create', async (req, res) => {
   if (!parsed || parsed <= 0) return res.status(400).json({ error: 'Invalid amount' });
 
   const params = new URLSearchParams();
-  params.append('amount', Math.round(parsed * 100).toString());
+  params.append('amount', parsed.toFixed(2)); // HitPay expects 2 decimal places
   params.append('currency', 'SGD');
   params.append('payment_methods[]', 'paynow_online');
-  params.append('generate_qr', 'true');
+  params.append('generate_qr', 'true'); // 🔥 make sure it's set
   params.append('reference_number', `POS-${Date.now()}`);
   params.append('redirect_url', webhook || `https://shopify-customer-api-production.up.railway.app/hitpay/webhook`);
   if (email) params.append('email', email);
@@ -202,15 +202,38 @@ app.post('/hitpay/create', async (req, res) => {
   try {
     const resp = await fetch(`${HITPAY_BASE_URL}/payment-requests`, {
       method: 'POST',
-      headers: { 'X-BUSINESS-API-KEY': HITPAY_API_KEY, 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+      headers: {
+        'X-BUSINESS-API-KEY': HITPAY_API_KEY,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
       body: params.toString(),
     });
+
     const data = await resp.json();
     console.log('⬅️ HitPay response:', data);
-    if (!resp.ok || !data.qr_code_data?.qr_code) {
-      return res.status(resp.status).json({ error: 'HitPay create failed', detail: data });
+
+    // 1️⃣ Check if HitPay gave us a direct QR image URL
+    let qrCodeUrl = data.qr_code_data?.qr_code;
+
+    // 2️⃣ If it's actually raw QR string (starts with "000201"), convert it to QR image
+    if (qrCodeUrl && qrCodeUrl.startsWith('000201')) {
+      qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrCodeUrl)}`;
+      console.log('🔁 Converted raw QR string to image URL:', qrCodeUrl);
     }
-    return res.json({ paymentRequestId: data.id, qrCodeUrl: data.qr_code_data.qr_code, checkoutUrl: data.url });
+
+    if (!resp.ok || !qrCodeUrl) {
+      return res.status(resp.status).json({
+        error: 'HitPay create failed',
+        detail: data,
+      });
+    }
+
+    return res.json({
+      paymentRequestId: data.id,
+      qrCodeUrl, // ✅ now always a proper image URL
+      checkoutUrl: data.url,
+    });
   } catch (err) {
     console.error('🔥 HitPay create exception:', err);
     return res.status(500).json({ error: 'Server error' });

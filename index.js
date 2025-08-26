@@ -257,16 +257,26 @@ app.get('/hitpay/status', async (req, res) => {
 });
 
 // ⑭ HitPay: webhook
-app.post('/hitpay/webhook', express.urlencoded({ extended: false }), (req, res) => {
-  console.log('🔥 Received POST /hitpay/webhook:', req.body);
-  const { hmac, ...fields } = req.body;
-  const sorted = Object.keys(fields).sort().map(k => k + fields[k]).join('');
-  const digest = crypto.createHmac('sha256', HITPAY_WEBHOOK_SALT).update(sorted).digest('hex');
-  if (digest !== hmac) {
-    console.warn('🚨 Webhook signature mismatch', { expected: digest, received: hmac });
-    return res.status(403).send('Invalid signature');
+app.post('/hitpay/webhook', express.raw({ type: '*/*' }), (req, res) => {
+  const sigHeader = req.get('x-hitpay-signature') || '';
+  const rawBody = req.body;
+
+  const expected = crypto
+    .createHmac('sha256', HITPAY_WEBHOOK_SALT)
+    .update(rawBody)
+    .digest('hex');
+
+  if (expected !== sigHeader) {
+    console.warn('🚨 Invalid webhook signature', {
+      expected: expected.slice(0, 16),
+      received: sigHeader.slice(0, 16),
+    });
+    return res.status(401).send('Invalid signature');
   }
-  console.log('✅ Valid webhook payload:', fields);
+
+  const data = JSON.parse(rawBody.toString('utf8'));
+  console.log('✅ Valid webhook payload:', data);
+
   res.sendStatus(200);
 });
 
@@ -300,6 +310,34 @@ app.get('/check', (req, res) => {
     return res.json({ trigger: true });
   }
   return res.json({ trigger: false });
+});
+
+
+// 1. Eligibility: check customer tag "gb01"
+app.post('/eligibility/first-time', async (req, res) => {
+const { customerId } = req.body;
+if (typeof customerId !== 'number') {
+return res.status(400).json({ error: 'customerId must be a number' });
+}
+try {
+// Fetch the customer record
+const url = `https://${SHOPIFY_STORE}/admin/api/2025-07/customers/${customerId}.json`;
+const resp = await fetch(url, {
+headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN, 'Content-Type': 'application/json' }
+});
+if (!resp.ok) throw await resp.text();
+const { customer } = await resp.json();
+// Check if the tag "gb01" is present
+const tags = customer.tags ? customer.tags.split(',').map(t => t.trim().toLowerCase()) : [];
+const hasTag = tags.includes('gb01');
+
+
+// eligible only if the tag is NOT present
+return res.json({ eligible: !hasTag, tags: customer.tags });
+} catch (err) {
+console.error('Eligibility error', err);
+return res.status(500).json({ error: 'Internal server error' });
+}
 });
 
 

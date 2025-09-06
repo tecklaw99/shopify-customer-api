@@ -149,14 +149,30 @@ app.get('/find-by-email', async (req, res) => {
 // ⑩ Shopify: create-customer
 app.post('/create-customer', async (req, res) => {
   const { firstName, lastName, email, phone } = req.body;
-  if (!firstName || !lastName || !email || !phone) return res.status(400).json({ error: 'Missing required fields' });
-  const password = "abc12345"
+  if (!firstName || !lastName || !email || !phone) 
+    return res.status(400).json({ error: 'Missing required fields' });
+
+  const password = "b2k123456"; // 👈 default password
+
   try {
     const resp = await fetch(`https://${SHOPIFY_STORE}/admin/api/2025-07/customers.json`, {
       method: 'POST',
-      headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customer: { first_name: firstName, last_name: lastName, email, phone,password } }),
+      headers: { 
+        'X-Shopify-Access-Token': ACCESS_TOKEN, 
+        'Content-Type': 'application/json' 
+      },
+      body: JSON.stringify({ 
+        customer: { 
+          first_name: firstName, 
+          last_name: lastName, 
+          email, 
+          phone,
+          password,             // 👈 insert default password
+          send_email_invite: false // optional: prevents Shopify sending email
+        } 
+      }),
     });
+
     const data = await resp.json();
     if (data.errors) return res.status(400).json({ error: 'Shopify error', detail: data.errors });
     res.json({ customerId: data.customer.id });

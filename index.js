@@ -150,11 +150,12 @@ app.get('/find-by-email', async (req, res) => {
 app.post('/create-customer', async (req, res) => {
   const { firstName, lastName, email, phone } = req.body;
   if (!firstName || !lastName || !email || !phone) return res.status(400).json({ error: 'Missing required fields' });
+  const password = "abc12345"
   try {
     const resp = await fetch(`https://${SHOPIFY_STORE}/admin/api/2025-07/customers.json`, {
       method: 'POST',
       headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customer: { first_name: firstName, last_name: lastName, email, phone } }),
+      body: JSON.stringify({ customer: { first_name: firstName, last_name: lastName, email, phone,password } }),
     });
     const data = await resp.json();
     if (data.errors) return res.status(400).json({ error: 'Shopify error', detail: data.errors });

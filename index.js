@@ -167,7 +167,8 @@ app.post('/create-customer', async (req, res) => {
           last_name: lastName, 
           email, 
           phone,
-          password:defaultpassword,             // 👈 insert default password
+          password:defaultpassword,
+          password_confirmation: defaultpassword,             // 👈 insert default password
           send_email_invite: false // optional: prevents Shopify sending email
         } 
       }),

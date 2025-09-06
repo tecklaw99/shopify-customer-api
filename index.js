@@ -152,7 +152,7 @@ app.post('/create-customer', async (req, res) => {
   if (!firstName || !lastName || !email || !phone) 
     return res.status(400).json({ error: 'Missing required fields' });
 
-  const defaultpassword = "b2k123456"; // 👈 default password
+  const defaultpassword = "abc123456"; // 👈 default password
 
   try {
     const resp = await fetch(`https://${SHOPIFY_STORE}/admin/api/2025-07/customers.json`, {

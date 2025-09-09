@@ -345,9 +345,9 @@ headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN, 'Content-Type': 'application/
 });
 if (!resp.ok) throw await resp.text();
 const { customer } = await resp.json();
-// Check if the tag "gb01" is present
+// Check if the tag "gb02" is present
 const tags = customer.tags ? customer.tags.split(',').map(t => t.trim().toLowerCase()) : [];
-const hasTag = tags.includes('gb01');
+const hasTag = tags.includes('gb02');
 
 
 // eligible only if the tag is NOT present

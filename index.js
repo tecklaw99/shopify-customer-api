@@ -331,7 +331,7 @@ app.get('/check', (req, res) => {
 });
 
 
-// 1. Eligibility: check customer tag "gb01"
+// 1. Eligibility: check customer tag "gb02"
 app.post('/eligibility/first-time', async (req, res) => {
 const { customerId } = req.body;
 if (typeof customerId !== 'number') {
@@ -348,6 +348,33 @@ const { customer } = await resp.json();
 // Check if the tag "gb02" is present
 const tags = customer.tags ? customer.tags.split(',').map(t => t.trim().toLowerCase()) : [];
 const hasTag = tags.includes('gb02');
+
+
+// eligible only if the tag is NOT present
+return res.json({ eligible: !hasTag, tags: customer.tags });
+} catch (err) {
+console.error('Eligibility error', err);
+return res.status(500).json({ error: 'Internal server error' });
+}
+});
+
+// 1. Eligibility: check customer tag "gd01"
+app.post('/eligibility/first-time2', async (req, res) => {
+const { customerId } = req.body;
+if (typeof customerId !== 'number') {
+return res.status(400).json({ error: 'customerId must be a number' });
+}
+try {
+// Fetch the customer record
+const url = `https://${SHOPIFY_STORE}/admin/api/2025-07/customers/${customerId}.json`;
+const resp = await fetch(url, {
+headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN, 'Content-Type': 'application/json' }
+});
+if (!resp.ok) throw await resp.text();
+const { customer } = await resp.json();
+// Check if the tag "gb02" is present
+const tags = customer.tags ? customer.tags.split(',').map(t => t.trim().toLowerCase()) : [];
+const hasTag = tags.includes('gd01');
 
 
 // eligible only if the tag is NOT present

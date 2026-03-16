@@ -358,33 +358,73 @@ return res.status(500).json({ error: 'Internal server error' });
 }
 });
 
-// 1. Eligibility: check customer tag "gd01"
-app.post('/eligibility/first-time2', async (req, res) => {
-const { customerId } = req.body;
-if (typeof customerId !== 'number') {
-return res.status(400).json({ error: 'customerId must be a number' });
-}
-try {
-// Fetch the customer record
-const url = `https://${SHOPIFY_STORE}/admin/api/2025-07/customers/${customerId}.json`;
-const resp = await fetch(url, {
-headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN, 'Content-Type': 'application/json' }
+app.post('/eligibility/check-tag', async (req, res) => {
+  const { customerId, tag } = req.body;
+
+  if (typeof customerId !== 'number') {
+    return res.status(400).json({ error: 'customerId must be a number' });
+  }
+
+  if (!tag || typeof tag !== 'string') {
+    return res.status(400).json({ error: 'tag is required' });
+  }
+
+  try {
+    const url = `https://${SHOPIFY_STORE}/admin/api/2025-07/customers/${customerId}.json`;
+
+    const resp = await fetch(url, {
+      headers: {
+        'X-Shopify-Access-Token': ACCESS_TOKEN,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!resp.ok) {
+      throw new Error(await resp.text());
+    }
+
+    const { customer } = await resp.json();
+
+    const tags = customer.tags
+      ? customer.tags.split(',').map((t) => t.trim().toLowerCase())
+      : [];
+
+    const purchaseTag = tag.trim().toLowerCase();
+    const redeemedTag = `redeemed-${purchaseTag}`;
+
+    const hasRedeemedTag = tags.includes(redeemedTag);
+    const hasPurchaseTag = tags.includes(purchaseTag);
+
+    // 1) 已领取过
+    if (hasRedeemedTag) {
+      return res.json({
+        eligible: false,
+        reason: 'already_redeemed',
+      });
+    }
+
+    // 2) 已下单，可以领取
+    if (hasPurchaseTag) {
+      return res.json({
+        eligible: true,
+        reason: 'purchased_can_redeem',
+      });
+    }
+
+    // 3) 两个都没有，还没下单
+    return res.json({
+      eligible: false,
+      reason: 'not_purchased_yet',
+    });
+  } catch (err) {
+    console.error('eligibility/check-tag error:', err);
+
+    return res.status(500).json({
+      error: 'shopify_api_error',
+      message: String(err.message || err),
+    });
+  }
 });
-if (!resp.ok) throw await resp.text();
-const { customer } = await resp.json();
-// Check if the tag "gb02" is present
-const tags = customer.tags ? customer.tags.split(',').map(t => t.trim().toLowerCase()) : [];
-const hasTag = tags.includes('gd01');
-
-
-// eligible only if the tag is NOT present
-return res.json({ eligible: !hasTag, tags: customer.tags });
-} catch (err) {
-console.error('Eligibility error', err);
-return res.status(500).json({ error: 'Internal server error' });
-}
-});
-
 
 
 // ⑮ Start server

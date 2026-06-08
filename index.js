@@ -426,6 +426,59 @@ app.post('/eligibility/check-tag', async (req, res) => {
   }
 });
 
+app.get("/flits/customer-balance", async (req, res) => {
+  try {
+    const { email } = req.query;
+
+    if (!email) {
+      return res.status(400).json({
+        status: "error",
+        message: "Missing customer email"
+      });
+    }
+
+    const flitsUrl =
+      `https://l7dwmnkv4xwd2wytgus6eajvbq0xtkli.lambda-url.us-east-2.on.aws/customer?customer_email=${encodeURIComponent(email)}`;
+
+    const flitsRes = await fetch(flitsUrl, {
+      method: "GET",
+      headers: {
+        "x-api-key": process.env.FLITS_API_KEY,
+        "Content-Type": "application/json"
+      }
+    });
+
+    const flitsData = await flitsRes.json();
+
+    if (!flitsRes.ok || flitsData.status !== "success") {
+      return res.status(404).json({
+        status: "error",
+        message: flitsData.message || "Unable to fetch Flits customer balance"
+      });
+    }
+
+    return res.json({
+      status: "success",
+      data: {
+        name: flitsData.data.name,
+        email: flitsData.data.customer_email,
+        loyaltyPointsBalance: flitsData.data.loyalty_points_balance || 0,
+        refundStoreCreditBalance: flitsData.data.refund_store_credit_balance || 0,
+        shopifyCustomerId: flitsData.data.shopify_customer_id,
+        referralCode: flitsData.data.referral_code
+      }
+    });
+
+  } catch (error) {
+    console.error("Flits balance error:", error);
+
+    return res.status(500).json({
+      status: "error",
+      message: "Server error while fetching Flits customer balance"
+    });
+  }
+});
+
 
 // ⑮ Start server
 app.listen(PORT, () => console.log(`🟩 Server listening on port ${PORT}`));
